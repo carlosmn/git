@@ -639,6 +639,12 @@ struct rpc_state {
 	 * further reading occurs.
 	 */
 	unsigned flush_read_but_not_sent : 1;
+
+	/*
+	 * Set to true after we have finished sending out the flush denoting the
+	 * end of a request.
+	 */
+	unsigned flush_sent : 1;
 };
 
 #define RPC_STATE_INIT { 0 }
@@ -734,6 +740,7 @@ static size_t rpc_out(void *ptr, size_t eltsize,
 			 * been fully sent.
 			 */
 			rpc->flush_read_but_not_sent = 0;
+			rpc->flush_sent = 1;
 			return 0;
 		}
 		/*
@@ -1142,14 +1149,34 @@ static int rpc_service(struct rpc_state *rpc, struct discovery *heads,
 
 	close(client.in);
 	client.in = -1;
-	if (!err) {
-		strbuf_read(rpc_result, client.out, 0);
-	} else {
-		char buf[4096];
-		for (;;)
-			if (xread(client.out, buf, sizeof(buf)) <= 0)
-				break;
+
+	/*
+	 * If we encountered an error, we still want the report. Throw away the
+	 * rest of the data meant for the remote repository so we can copy the
+	 * report.
+	 *
+	 * If it hasn't been sent out yet, we read up to the first flush to
+	 * replicate what would be happening as part of post_rpc which copies
+	 * the data from send-pack to the HTTP request until it sees a flush.
+	 *
+	 * After that returns, the loop above would see a second flush and exit.
+	 * We thus also need to eat another flush when we've received an error.
+	 */
+	if (err) {
+		/* Discard the rest of the payload if we have not fully sent it out */
+		if (!rpc->flush_sent) {
+			int n;
+			do {
+				n = packet_read(rpc->out, rpc->buf, rpc->alloc, 0);
+			} while (n > 0);
+		}
+
+		/* Consume the flush meant for the loop calling post_rpc */
+		packet_read(rpc->out, rpc->buf, rpc->alloc, 0);
 	}
+
+	/* Copy the report of successes/failures */
+	strbuf_read(rpc_result, client.out, 0);
 
 	close(client.out);
 	client.out = -1;
