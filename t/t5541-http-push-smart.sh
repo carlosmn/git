@@ -503,4 +503,67 @@ test_expect_success 'report error server does not provide ref status' '
 	test_cmp expect actual
 '
 
+# This set of tests covers a HTTP server returning a well-formed errors in
+# different ways, including interrupting the POST upload with the error.
+test_expect_success 'setup remote repository for too-large pushes' '
+	cd "$ROOT_PATH" &&
+	git init --bare push_too_large.git &&
+	cd push_too_large.git &&
+	git config http.receivepack true &&
+	git config core.logallrefupdates true &&
+	cd - &&
+	mv push_too_large.git "$HTTPD_DOCUMENT_ROOT_PATH"
+'
+
+test_too_large_push() {
+    test_assertion=$1
+    maxinputsize=$2
+    filesize=$3
+
+    $test_assertion "reject too-large push over HTTP (size $filesize)" '
+		git -C "$HTTPD_DOCUMENT_ROOT_PATH/push_too_large.git" config receive.maxInputSize $maxinputsize &&
+		git update-ref -d HEAD &&
+		test-tool genrandom foo $filesize >large-file-$filesize &&
+		git add large-file-$filesize &&
+		test_commit large-file-$filesize &&
+		test_must_fail git push --porcelain \
+			$HTTPD_URL/smart/push_too_large.git \
+			HEAD:refs/tags/will-fail >actual &&
+		test_must_fail git -C "$HTTPD_DOCUMENT_ROOT_PATH/push_too_large.git" \
+		rev-parse --verify refs/tags/will-fail &&
+		cat >expect <<-EOF &&
+		To $HTTPD_URL/smart/push_too_large.git
+		!	HEAD:refs/tags/will-fail	[remote rejected] (unpacker error)
+		Done
+		EOF
+		test_cmp expect actual
+	'
+}
+
+# 200 OK after the POST completes
+test_too_large_push test_expect_success 128 $((1*1024*1024))
+# 413 Request Entity Too Large after we've sent off all the data (we're just above httpd's limit)
+test_too_large_push test_expect_failure 0 $((2*1024*1024))
+# 413 Request Entity Too Large sent back while we're still sending our POST body
+test_too_large_push test_expect_failure 0 $((10*1024*1024))
+
+test_expect_failure "reject too-large push over HTTP with generic error" '
+	cp -r "$HTTPD_DOCUMENT_ROOT_PATH/push_too_large.git" "$HTTPD_DOCUMENT_ROOT_PATH/unhooked_push_too_large.git" &&
+	git update-ref -d HEAD &&
+	test-tool genrandom foo $((10*1024*1024)) >large-file-foobar &&
+	git add large-file-foobar &&
+	test_commit large-file-foobar &&
+	test_must_fail git push --porcelain \
+		$HTTPD_URL/smart/unhooked_push_too_large.git \
+		HEAD:refs/tags/will-fail >actual &&
+	test_must_fail git -C "$HTTPD_DOCUMENT_ROOT_PATH/unhooked_push_too_large.git" \
+	rev-parse --verify refs/tags/will-fail &&
+	cat >expect <<-EOF &&
+	To $HTTPD_URL/smart/unhooked_push_too_large.git
+	!	HEAD:refs/tags/will-fail	[remote failure] (remote failed to report status)
+	Done
+	EOF
+	test_cmp expect actual
+'
+
 test_done
