@@ -516,11 +516,10 @@ test_expect_success 'setup remote repository for too-large pushes' '
 '
 
 test_too_large_push() {
-    test_assertion=$1
-    maxinputsize=$2
-    filesize=$3
+    maxinputsize=$1
+    filesize=$2
 
-    $test_assertion "reject too-large push over HTTP (size $filesize)" '
+    test_expect_success "reject too-large push over HTTP (size $filesize)" '
 		git -C "$HTTPD_DOCUMENT_ROOT_PATH/push_too_large.git" config receive.maxInputSize $maxinputsize &&
 		git update-ref -d HEAD &&
 		test-tool genrandom foo $filesize >large-file-$filesize &&
@@ -541,11 +540,11 @@ test_too_large_push() {
 }
 
 # 200 OK after the POST completes
-test_too_large_push test_expect_success 128 $((1*1024*1024))
+test_too_large_push 128 $((1*1024*1024))
 # 413 Request Entity Too Large after we've sent off all the data (we're just above httpd's limit)
-test_too_large_push test_expect_failure 0 $((2*1024*1024))
+test_too_large_push 0 $((2*1024*1024))
 # 413 Request Entity Too Large sent back while we're still sending our POST body
-test_too_large_push test_expect_failure 0 $((10*1024*1024))
+test_too_large_push 0 $((10*1024*1024))
 
 test_expect_failure "reject too-large push over HTTP with generic error" '
 	cp -r "$HTTPD_DOCUMENT_ROOT_PATH/push_too_large.git" "$HTTPD_DOCUMENT_ROOT_PATH/unhooked_push_too_large.git" &&

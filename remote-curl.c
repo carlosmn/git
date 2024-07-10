@@ -645,6 +645,18 @@ struct rpc_state {
 	 * end of a request.
 	 */
 	unsigned flush_sent : 1;
+
+	/*
+	 * Set to true once we've checked the response's content-type.
+	 */
+	unsigned checked_content_type: 1;
+
+	/*
+	 * If checked_content_type is 1, this contains whether the content type
+	 * is application/x-git- and thus it's meant for us.
+	 */
+	unsigned content_type_ok: 1;
+
 };
 
 #define RPC_STATE_INIT { 0 }
@@ -829,6 +841,27 @@ struct rpc_in_data {
 };
 
 /*
+ * Check if the remote is trying to send back something that we can
+ * parse even if it comes with an HTTP error code.
+ */
+static int content_type_ok(struct rpc_in_data *data)
+{
+	if (!data->rpc->checked_content_type) {
+		struct curl_header *header;
+
+		data->rpc->checked_content_type = 1;
+		if (curl_easy_header(data->slot->curl, "content-type", 0, CURLH_HEADER, -1, &header) != CURLHE_OK)
+			return 0;
+
+		if (!strncmp("application/x-git-", header->value, strlen("application/x-git-")) ) {
+			data->rpc->content_type_ok = 1;
+		}
+	}
+
+	return data->rpc->content_type_ok;
+}
+
+/*
  * A callback for CURLOPT_WRITEFUNCTION. The return value is the bytes consumed
  * from ptr.
  */
@@ -842,7 +875,7 @@ static size_t rpc_in(char *ptr, size_t eltsize,
 	if (curl_easy_getinfo(data->slot->curl, CURLINFO_RESPONSE_CODE,
 			      &response_code) != CURLE_OK)
 		return size;
-	if (response_code >= 300)
+	if (response_code >= 300 && !content_type_ok(data))
 		return size;
 	if (size)
 		data->rpc->any_written = 1;
