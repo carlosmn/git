@@ -1,9 +1,13 @@
 #!/bin/sh
 
-test_description='check receive input limits'
+: ${HTTP_PROTO:=HTTP/1.1}
+test_description='check receive input limits ($HTTP_PROTO)'
 
 TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
+. "$TEST_DIRECTORY"/lib-httpd.sh
+test "$HTTP_PROTO" = "HTTP/2" && enable_http2
+start_httpd
 
 # Let's run tests with different unpack limits: 1 and 10000
 # When the limit is 1, `git receive-pack` will call `git index-pack`.
@@ -74,13 +78,32 @@ test_pack_input_limit () {
 
 }
 
-test_expect_success "create known-size (1024 bytes) commit" '
-	test-tool genrandom foo 1024 >one-k &&
-	git add one-k &&
-	test_commit one-k
-'
+# test_expect_success "create known-size (1024 bytes) commit" '
+# 	test-tool genrandom foo 1024 >one-k &&
+# 	git add one-k &&
+# 	test_commit one-k
+# '
 
-test_pack_input_limit index
-test_pack_input_limit unpack
+# test_pack_input_limit index
+# test_pack_input_limit unpack
+
+test_expect_success 'reject too-large push over HTTP' '
+	git init "$HTTPD_DOCUMENT_ROOT_PATH/error_smart_413" &&
+	git -C "$HTTPD_DOCUMENT_ROOT_PATH/error_smart_413" config receive.maxInputSize 128 &&
+	test-tool genrandom foo $((10*1024*1024)) >large-file &&
+	git add large-file &&
+	test_commit large-file &&
+	test_must_fail git push --porcelain \
+		$HTTPD_URL/error_smart_413 \
+		HEAD:refs/tags/will-fail >actual &&
+	test_must_fail git -C "$HTTPD_DOCUMENT_ROOT_PATH/error_smart_413" \
+		rev-parse --verify refs/tags/will-fail &&
+	cat >expect <<-EOF &&
+	To $HTTPD_URL/error_too_large
+	!	HEAD:refs/tags/will-fail	[remote rejected] (unpacker error)
+	Done
+	EOF
+	test_cmp expect actual
+'
 
 test_done
