@@ -546,7 +546,7 @@ test_too_large_push 0 $((2*1024*1024))
 # 413 Request Entity Too Large sent back while we're still sending our POST body
 test_too_large_push 0 $((10*1024*1024))
 
-test_expect_failure "reject too-large push over HTTP with generic error" '
+test_expect_success "reject too-large push over HTTP with generic error" '
 	cp -r "$HTTPD_DOCUMENT_ROOT_PATH/push_too_large.git" "$HTTPD_DOCUMENT_ROOT_PATH/unhooked_push_too_large.git" &&
 	git update-ref -d HEAD &&
 	test-tool genrandom foo $((10*1024*1024)) >large-file-foobar &&

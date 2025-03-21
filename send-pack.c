@@ -172,6 +172,7 @@ static int receive_status(struct repository *r,
 
 	trace2_region_enter("send_pack", "receive_status", r);
 	hint = NULL;
+	reader->options |= PACKET_READ_GENTLE_ON_READ_ERROR;
 	ret = receive_unpack_status(reader);
 	while (1) {
 		struct object_id old_oid, new_oid;
