@@ -148,6 +148,14 @@ Clients MAY reuse a cached entity without revalidation if the
 Cache-Control and/or Expires header permits caching.  Clients and
 servers MUST follow RFC 2616 for cache controls.
 
+Smart Protocol
+~~~~~~~~~~~~~~
+
+Servers MAY respond with other HTTP status codes to indicate specific error
+conditions such as `413 Payload Too Large` or `429 Too Many Requests` with
+`Content-Type: application/x-$servicename-advertisement`. In this case the
+response MUST contain an error. Clients MUST parse such a response the same as
+if it came from a `200 OK`.
 
 Discovering References
 ----------------------
@@ -267,9 +275,6 @@ type is returned.  When falling back to the dumb protocol clients
 SHOULD NOT make an additional request to `$GIT_URL/info/refs`, but
 instead SHOULD use the response already in hand.  Clients MUST NOT
 continue if they do not support the dumb protocol.
-
-Clients MUST validate the status code is either `200 OK` or
-`304 Not Modified`.
 
 Clients MUST validate the first five bytes of the response entity
 matches the regex `^[0-9a-f]{4}#`.  If this test fails, clients
