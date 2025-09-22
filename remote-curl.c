@@ -407,6 +407,18 @@ static int get_protocol_http_header(enum protocol_version version,
 	return 0;
 }
 
+static int is_expected_content_type(struct strbuf *type, const char *service)
+{
+	const char *p;
+
+	if (!skip_prefix(type->buf, "application/x-", &p) ||
+	    !skip_prefix(p, service, &p) ||
+	    strcmp(p, "-advertisement"))
+		return 0;
+
+	return 1;
+}
+
 static void check_smart_http(struct discovery *d, const char *service,
 			     struct strbuf *type)
 {
@@ -418,9 +430,7 @@ static void check_smart_http(struct discovery *d, const char *service,
 	 * But once we do, we commit to it and assume any other protocol
 	 * violations are hard errors.
 	 */
-	if (!skip_prefix(type->buf, "application/x-", &p) ||
-	    !skip_prefix(p, service, &p) ||
-	    strcmp(p, "-advertisement"))
+	if (!is_expected_content_type(type, service))
 		return;
 
 	packet_reader_init(&reader, -1, d->buf, d->len,
@@ -541,6 +551,14 @@ static struct discovery *discover_refs(const char *service, int for_push)
 				transport_anonymize_url(url.buf));
 		}
 	default:
+		/*
+		 * If we see an error but it has the right content-type for the
+		 * response, we're looking at a kind of rich error so we still
+		 * want to process it the same as in the OK case.
+		 */
+		if (is_expected_content_type(&type, service))
+			break;
+
 		show_http_message(&type, &charset, &buffer);
 		die(_("unable to access '%s': %s"),
 		    transport_anonymize_url(url.buf), curl_errorstr);

@@ -796,7 +796,7 @@ Cloning into 'return_429'...
 fatal: remote error: this is a descriptive error message
 EOF
 
-test_expect_failure 'server returns 429 Too Many Requests' '
+test_expect_success 'server returns 429 Too Many Requests' '
 	! git clone $HTTPD_URL/return_429.git 2> actual &&
 	test_cmp expected actual
 '
